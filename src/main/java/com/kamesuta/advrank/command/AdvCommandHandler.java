@@ -3,7 +3,6 @@ package com.kamesuta.advrank.command;
 import com.kamesuta.advrank.data.PlayerData;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
-import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 
 import java.util.Collections;
@@ -40,17 +39,17 @@ public class AdvCommandHandler extends BaseCommandHandler {
         }
 
         // プレイヤーの進捗表示を開始
-        displayPlayerAdvancements((CraftPlayer) player, target);
+        displayPlayerAdvancements(player, target);
         return true;
     }
 
     /**
      * 指定された名前でプレイヤーを検索する
      */
-    private CraftPlayer findTargetPlayer(CommandSender sender, String targetName) {
+    private Player findTargetPlayer(CommandSender sender, String targetName) {
         return Bukkit.selectEntities(sender, targetName).stream()
-                .filter(entity -> entity instanceof CraftPlayer)
-                .map(entity -> (CraftPlayer) entity)
+                .filter(entity -> entity instanceof Player)
+                .map(entity -> (Player) entity)
                 .findFirst()
                 .orElse(null);
     }
@@ -58,7 +57,7 @@ public class AdvCommandHandler extends BaseCommandHandler {
     /**
      * ターゲットプレイヤーの進捗表示を設定する
      */
-    private void displayPlayerAdvancements(CraftPlayer player, CraftPlayer target) {
+    private void displayPlayerAdvancements(Player player, Player target) {
         // プレイヤーにタイトルメッセージを表示
         player.sendTitle("「L」キーで進捗画面を開く", target.getName() + " の進捗を表示中...", 10, 100000, 10);
         

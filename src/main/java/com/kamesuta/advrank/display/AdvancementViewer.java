@@ -1,25 +1,15 @@
 package com.kamesuta.advrank.display;
 
 import com.kamesuta.advrank.data.PlayerData;
+import com.kamesuta.advrank.utils.NMSUtils;
 
 import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.events.PacketAdapter;
 import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.events.PacketEvent;
-import net.minecraft.advancements.AdvancementHolder;
-import net.minecraft.advancements.AdvancementNode;
-import net.minecraft.advancements.AdvancementProgress;
-import net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket;
-import net.minecraft.network.protocol.game.ServerboundSeenAdvancementsPacket;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.PlayerAdvancements;
-import net.minecraft.server.ServerAdvancementManager;
-import net.minecraft.server.advancements.AdvancementVisibilityEvaluator;
-import org.bukkit.Bukkit;
-import org.bukkit.craftbukkit.CraftServer;
-import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 
+import java.lang.reflect.Method;
 import java.util.*;
 
 import static com.kamesuta.advrank.AdvRankingPlugin.app;
@@ -35,37 +25,44 @@ public class AdvancementViewer {
      *               このプレイヤーに進捗を送信する
      * @param target 見られるプレイヤー
      */
-    public void seePlayerAdvancements(CraftPlayer viewer, CraftPlayer target) {
+    public void seePlayerAdvancements(Player viewer, Player target) {
         // 送信するデータ
-        List<AdvancementHolder> toAdd = new ArrayList<>();
-        Set<ResourceLocation> toRemove = new HashSet<>();
-        Map<ResourceLocation, AdvancementProgress> toUpdate = new HashMap<>();
+        List<Object> toAdd = new ArrayList<>();
+        Set<Object> toRemove = new HashSet<>();
+        Map<Object, Object> toUpdate = new HashMap<>();
 
-        // 進捗を取得する
-        ServerAdvancementManager advancementManager = ((CraftServer) Bukkit.getServer()).getServer().getAdvancements();
-        PlayerAdvancements playerAdvancements = target.getHandle().getAdvancements();
-        for (AdvancementHolder advancementHolder : advancementManager.getAllAdvancements()) {
-            AdvancementProgress progress = playerAdvancements.getOrStartProgress(advancementHolder);
+        // リフレクション経由で NMS オブジェクトを取得
+        Object server = NMSUtils.getServer();
+        Object advancementManager = NMSUtils.getAdvancements(server);
+        Object targetHandle = NMSUtils.getHandle(target);
+        Object playerAdvancements = NMSUtils.getPlayerAdvancements(targetHandle);
 
-            // 進捗を追加する
-            toUpdate.put(advancementHolder.id(), progress);
+        // 全進捗を取得し、進捗状況を update に追加
+        Collection<?> allAdvancements = NMSUtils.getAllAdvancements(advancementManager);
+        for (Object advancementHolder : allAdvancements) {
+            Object progress = NMSUtils.getOrStartProgress(playerAdvancements, advancementHolder);
+            Object id = NMSUtils.getAdvancementId(advancementHolder);
+            toUpdate.put(id, progress);
         }
 
-        // 表示されている進捗を追加する
-        for (AdvancementNode root : advancementManager.tree().roots()) {
-            AdvancementVisibilityEvaluator.evaluateVisibility(root,
-                    (node) -> playerAdvancements.getOrStartProgress(node.holder()).isDone(),
-                    (node, flag) -> {
-                        if (flag) {
-                            // 進捗を追加する
-                            toAdd.add(node.holder());
-                        }
-                    }
-            );
+        // 表示判定を行い、表示すべき進捗を toAdd に追加
+        Object tree = NMSUtils.getAdvancementTree(advancementManager);
+        Iterable<?> roots = NMSUtils.getRoots(tree);
+        
+        // 判定用のプロキシを作成
+        Method getOrStartProgressMethod = NMSUtils.findMethodByReturnTypeName(playerAdvancements.getClass(), "AdvancementProgress", 1);
+        Object predicate = NMSUtils.createPredicateProxy(playerAdvancements, getOrStartProgressMethod);
+        Object consumer = NMSUtils.createConsumerProxy(toAdd);
+
+        // 判定実行
+        for (Object root : roots) {
+            NMSUtils.evaluateVisibility(root, predicate, consumer);
         }
 
-        // 進捗を送信する
-        viewer.getHandle().connection.send(new ClientboundUpdateAdvancementsPacket(true, toAdd, toRemove, toUpdate, false));
+        // パケットを生成して送信
+        Object viewerHandle = NMSUtils.getHandle(viewer);
+        Object packet = NMSUtils.createUpdatePacket(true, toAdd, toRemove, toUpdate);
+        NMSUtils.sendPacket(viewerHandle, packet);
     }
 
     /**
@@ -76,15 +73,16 @@ public class AdvancementViewer {
             @Override
             public void onPacketReceiving(PacketEvent event) {
                 PacketContainer packetContainer = event.getPacket();
-                ServerboundSeenAdvancementsPacket packet = (ServerboundSeenAdvancementsPacket) packetContainer.getHandle();
+                Object packet = packetContainer.getHandle();
+                String action = NMSUtils.getSeenAdvancementsAction(packet);
 
                 // 進捗タブが開かれた
-                if (packet.getAction() == ServerboundSeenAdvancementsPacket.Action.OPENED_TAB) {
+                if ("OPENED_TAB".equals(action)) {
                     onAdvancementTabOpen(event.getPlayer());
                 }
 
                 // 進捗タブが閉じられた
-                if (packet.getAction() == ServerboundSeenAdvancementsPacket.Action.CLOSED_SCREEN) {
+                if ("CLOSED_SCREEN".equals(action)) {
                     onAdvancementTabClose(event.getPlayer());
                 }
             }
@@ -121,6 +119,6 @@ public class AdvancementViewer {
         // ID表示をリセット
         playerData.showId = false;
         // 元に戻す
-        seePlayerAdvancements((CraftPlayer) viewer, (CraftPlayer) viewer);
+        seePlayerAdvancements(viewer, viewer);
     }
 }

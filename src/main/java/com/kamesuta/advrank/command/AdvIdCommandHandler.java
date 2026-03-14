@@ -2,7 +2,6 @@ package com.kamesuta.advrank.command;
 
 import com.kamesuta.advrank.data.PlayerData;
 import org.bukkit.command.CommandSender;
-import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 
 import java.util.Collections;
@@ -25,14 +24,14 @@ public class AdvIdCommandHandler extends BaseCommandHandler {
         }
 
         // ID表示モードを有効にする
-        displayAdvancementIds((CraftPlayer) player);
+        displayAdvancementIds(player);
         return true;
     }
 
     /**
      * 進捗ID表示モードを有効にする
      */
-    private void displayAdvancementIds(CraftPlayer player) {
+    private void displayAdvancementIds(Player player) {
         // プレイヤーにタイトルメッセージを表示
         player.sendTitle("「L」キーで進捗画面を開く", "進捗のIDを表示中...", 10, 100000, 10);
         
