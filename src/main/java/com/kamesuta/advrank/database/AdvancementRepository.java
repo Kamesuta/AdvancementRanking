@@ -68,9 +68,12 @@ public class AdvancementRepository {
      */
     public void recordPlayerAdvancement(int playerId, int advancementId, Timestamp timestamp) throws SQLException {
         // タイムスタンプに応じてSQL文を選択
-        var sql = timestamp == null 
-            ? "INSERT IGNORE INTO player_advancement (player_id, advancement_id, timestamp) VALUES (?, ?, NOW());"
-            : "INSERT IGNORE INTO player_advancement (player_id, advancement_id, timestamp) VALUES (?, ?, ?);";
+        String ignoreKeyword = databaseManager.isSqlite() ? "OR IGNORE" : "IGNORE";
+        String currentTimestamp = databaseManager.isSqlite() ? "CURRENT_TIMESTAMP" : "NOW()";
+        
+        String sql = timestamp == null 
+            ? "INSERT %s INTO player_advancement (player_id, advancement_id, timestamp) VALUES (?, ?, %s);".formatted(ignoreKeyword, currentTimestamp)
+            : "INSERT %s INTO player_advancement (player_id, advancement_id, timestamp) VALUES (?, ?, ?);".formatted(ignoreKeyword);
             
         try (var pstmt = databaseManager.getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, playerId);

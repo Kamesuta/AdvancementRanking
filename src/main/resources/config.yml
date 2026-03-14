@@ -1,4 +1,8 @@
-# MySQL settings
+# Database settings
+database:
+  type: "sqlite" # sqlite or mysql
+
+# MySQL settings (used only if database.type is mysql)
 mysql:
   username: "root"
   password: ""

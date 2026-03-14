@@ -16,12 +16,17 @@ public class DatabaseManager implements AutoCloseable {
     private static final Logger logger = Logger.getLogger(DatabaseManager.class.getName());
 
     private final Connection conn;
+    private final boolean isSqlite;
 
     /**
      * コンストラクタ
      * データベース接続を確立し、必要なテーブルを作成する
      */
     public DatabaseManager() throws SQLException {
+        var config = app.getConfig();
+        String type = config.getString("database.type", "sqlite");
+        this.isSqlite = "sqlite".equalsIgnoreCase(type);
+        
         this.conn = createConnection();
         initializeTables();
     }
@@ -30,21 +35,30 @@ public class DatabaseManager implements AutoCloseable {
      * データベース接続を作成する
      */
     private Connection createConnection() throws SQLException {
-        var config = app.getConfig();
-        // 接続URLを構築（Java21のテキストブロック使用）
-        var url = """
-                jdbc:mysql://%s:%s/%s
-                """.formatted(
-                config.getString("mysql.host"),
-                config.getString("mysql.port"),
-                config.getString("mysql.databaseName")
-        ).strip();
+        if (isSqlite) {
+            java.io.File dataFolder = app.getDataFolder();
+            if (!dataFolder.exists()) {
+                dataFolder.mkdirs();
+            }
+            java.io.File dbFile = new java.io.File(dataFolder, "database.db");
+            return DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+        } else {
+            var config = app.getConfig();
+            // 接続URLを構築（Java21のテキストブロック使用）
+            var url = """
+                    jdbc:mysql://%s:%s/%s
+                    """.formatted(
+                    config.getString("mysql.host"),
+                    config.getString("mysql.port"),
+                    config.getString("mysql.databaseName")
+            ).strip();
 
-        var username = config.getString("mysql.username");
-        var password = config.getString("mysql.password");
+            var username = config.getString("mysql.username");
+            var password = config.getString("mysql.password");
 
-        // データベースに接続
-        return DriverManager.getConnection(url, username, password);
+            // データベースに接続
+            return DriverManager.getConnection(url, username, password);
+        }
     }
 
     /**
@@ -53,39 +67,55 @@ public class DatabaseManager implements AutoCloseable {
      */
     private void initializeTables() throws SQLException {
         try (var stmt = conn.createStatement()) {
+            String primaryKey = isSqlite ? "INTEGER PRIMARY KEY AUTOINCREMENT" : "INT AUTO_INCREMENT PRIMARY KEY";
+            String uniqueKey = isSqlite ? "UNIQUE (player_id, advancement_id)" : "UNIQUE KEY unique_player_advancement (player_id, advancement_id)";
+            String indexUuid = isSqlite ? "" : ",\n                        INDEX idx_uuid (uuid)";
+            String indexAdvId = isSqlite ? "" : ",\n                        INDEX idx_advancement_id (advancement_id)";
+            String indexTimestamp = isSqlite ? "" : ",\n                        INDEX idx_timestamp (timestamp)";
+
             // playerテーブル：プレイヤー情報を格納
             stmt.execute("""
                     CREATE TABLE IF NOT EXISTS player (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        id %s,
                         uuid BINARY(16) UNIQUE NOT NULL,
-                        name VARCHAR(16) NOT NULL,
-                        INDEX idx_uuid (uuid)
+                        name VARCHAR(16) NOT NULL%s
                     );
-                    """);
+                    """.formatted(primaryKey, indexUuid));
 
             // advancementテーブル：実績情報を格納
             stmt.execute("""
                     CREATE TABLE IF NOT EXISTS advancement (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        id %s,
                         advancement_key VARCHAR(255) UNIQUE NOT NULL
                     );
-                    """);
+                    """.formatted(primaryKey));
 
             // player_advancementテーブル：プレイヤーの実績達成記録を格納
             stmt.execute("""
                     CREATE TABLE IF NOT EXISTS player_advancement (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        id %s,
                         player_id INT NOT NULL,
                         advancement_id INT NOT NULL,
                         timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE KEY unique_player_advancement (player_id, advancement_id),
+                        %s,
                         FOREIGN KEY (player_id) REFERENCES player(id),
-                        FOREIGN KEY (advancement_id) REFERENCES advancement(id),
-                        INDEX idx_advancement_id (advancement_id),
-                        INDEX idx_timestamp (timestamp)
+                        FOREIGN KEY (advancement_id) REFERENCES advancement(id)%s%s
                     );
-                    """);
+                    """.formatted(primaryKey, uniqueKey, indexAdvId, indexTimestamp));
+
+            if (isSqlite) {
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_uuid ON player (uuid);");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_advancement_id ON player_advancement (advancement_id);");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON player_advancement (timestamp);");
+            }
         }
+    }
+
+    /**
+     * SQLiteを使用しているかどうかを返す
+     */
+    public boolean isSqlite() {
+        return isSqlite;
     }
 
     /**
