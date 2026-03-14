@@ -62,8 +62,10 @@ public class AdvancementRankingDisplay {
                     // 進捗にランキングと誰の進捗かを追加する
                     Advancement advancement = holder.value();
                     Optional<DisplayInfo> displayInfo = advancement.display().map((display) -> {
-                        // この実績のランキングデータを取得（上位3人、下位3人）
-                        RankingProgressData ranking = app.rankingManager.getAdvancementProgressData(viewer, holder.toBukkit(), 3, 3);
+                        boolean disableTop3 = app.getConfig().getBoolean("disable_top3", false);
+
+                        // この実績のランキングデータを取得（上位・下位）
+                        RankingProgressData ranking = app.rankingManager.getAdvancementProgressData(viewer, holder.toBukkit(), disableTop3 ? 0 : 3, 3);
                         if (ranking == null) return display; // ランキングが取得できなかったらそのまま返す
 
                         // 進捗タイトルを構築（他プレイヤーの進捗を見ている場合はその旨を表示）
@@ -76,13 +78,7 @@ public class AdvancementRankingDisplay {
                         // ランキング進捗情報を追加（達成人数、順位など）
                         ranking.appendProgressDescription(description);
 
-                        // 上位プレイヤーの情報を表示に追加
-                        if (!ranking.top().isEmpty()) {
-                            description.append("\n\n")
-                                    .append(Component.literal("トップ3").withStyle(ChatFormatting.YELLOW));
-                            ranking.appendRanking(description, ranking.top());
-                            
-                            // 全ランキング表示コマンドのリンクを生成
+                        Runnable appendLink = () -> {
                             String advancementKey = holder.id().toString();
                             int advancementId = app.rankingManager.getAdvancementIdByKey(advancementKey);
                             if (advancementId != -1) {
@@ -90,12 +86,30 @@ public class AdvancementRankingDisplay {
                                         .append(Component.literal("/adv_rank " + advancementId).withStyle(ChatFormatting.BLUE))
                                         .append(Component.literal(" で全てのランキングを見る").withStyle(ChatFormatting.GRAY));
                             }
-                        }
-                        // 下位プレイヤーの情報も表示（達成者が6人以上の場合）
-                        if (!ranking.bottom().isEmpty() && ranking.done() >= 6) {
-                            description.append("\n\n")
-                                    .append(Component.literal("直近達成3位").withStyle(ChatFormatting.BLUE));
-                            ranking.appendRanking(description, ranking.bottom());
+                        };
+
+                        if (disableTop3) {
+                            if (!ranking.bottom().isEmpty()) {
+                                description.append("\n\n")
+                                        .append(Component.literal("直近達成3位").withStyle(ChatFormatting.BLUE));
+                                ranking.appendRanking(description, ranking.bottom());
+                                appendLink.run();
+                            }
+                        } else {
+                            // 上位プレイヤーの情報を表示に追加
+                            if (!ranking.top().isEmpty()) {
+                                description.append("\n\n")
+                                        .append(Component.literal("トップ3").withStyle(ChatFormatting.YELLOW));
+                                ranking.appendRanking(description, ranking.top());
+                                
+                                appendLink.run();
+                            }
+                            // 下位プレイヤーの情報も表示（達成者が6人以上の場合）
+                            if (!ranking.bottom().isEmpty() && ranking.done() >= 6) {
+                                description.append("\n\n")
+                                        .append(Component.literal("直近達成3位").withStyle(ChatFormatting.BLUE));
+                                ranking.appendRanking(description, ranking.bottom());
+                            }
                         }
 
                         // ID表示モードの場合、実績IDを表示

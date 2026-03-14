@@ -9,3 +9,6 @@ mysql:
   databaseName: "advancement_ranking"
   host: "127.0.0.1"
   port: 3306
+
+# View settings
+disable_top3: false
